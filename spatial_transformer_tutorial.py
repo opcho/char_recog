@@ -10,7 +10,7 @@ import torchvision
 from torchvision import models, transforms
 import matplotlib.pyplot as plt
 import numpy as np
-import custom_dataset
+import custom_datasets
 import time
 import copy
 import string
@@ -25,14 +25,14 @@ import torchvision.utils as v_utils
 parser = argparse.ArgumentParser()
 parser.add_argument('--batch_size', type = int, default = 16)
 parser.add_argument('--test-batch-size', type = int, default = 16)
-parser.add_argument('--epochs', type = int, default = 60)
+parser.add_argument('--epochs', type = int, default = 30)
 parser.add_argument('--input_channel', type = int, default = 60)
 parser.add_argument('--lr', type = float, default = 0.001)
 
-parser.add_argument('--model', type = str, default = "stn_aug2_full")
+parser.add_argument('--model', type = str, default = "stn_aug0.5_full")
 # Flag for feature extracting. When False, we finetune the whole model,
 #   when True we only update the reshaped layer params
-parser.add_argument('--feature_extract', type = bool, default = True)
+parser.add_argument('--feature_extract', type = bool, default = False)
 parser.add_argument('--num_classes', type = int, default = len(string.digits + string.ascii_uppercase + string.ascii_lowercase))
 parser.add_argument('--img_height', type = int, default = 224)
 parser.add_argument('--img_width', type = int, default = 224)
@@ -55,7 +55,7 @@ args = parser.parse_args()
 train_transform=transforms.Compose([
     torchvision.transforms.Resize((args.img_height, args.img_width)),
     # torchvision.transforms.RandomRotation(degrees=(-20, 20)),
-transforms.RandomAffine((-20,20), translate=(0.1,0.1),  shear=(-20,20),  fillcolor=0),
+    transforms.RandomAffine((-20,20), translate=(0.1,0.1),  shear=(-20,20),  fillcolor=0),
     transforms.ToTensor(),
     transforms.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225]),
@@ -68,16 +68,27 @@ test_transform=transforms.Compose([
 ])
 gtrain_transform=transforms.Compose([
     torchvision.transforms.Grayscale(),
-    torchvision.transforms.Resize((64,64)),
-    # torchvision.transforms.RandomRotation(degrees=(-30, 30)),
+    torchvision.transforms.Resize((args.img_height,args.img_height)),
+    torchvision.transforms.RandomRotation(degrees=(-30, 30)),
+    # transforms.RandomAffine((-20, 20), translate=(0.1, 0.1), shear=(-20, 20), fillcolor=0),
     transforms.ToTensor(),
-    torchvision.transforms.Normalize((0.5,), (0.5,)),
+    # torchvision.transforms.Normalize((0.5,), (0.5,)),
+    transforms.Normalize((0.1307,), (0.3081,))
+])
+gtrain_transform2=transforms.Compose([
+    torchvision.transforms.Grayscale(),
+    torchvision.transforms.Resize((args.img_height,args.img_height)),
+    transforms.RandomAffine( (-20,20),shear=(-20, 20), ),
+    transforms.ToTensor(),
+    # torchvision.transforms.Normalize((0.5,), (0.5,)),
+    transforms.Normalize((0.1307,), (0.3081,))
 ])
 gtest_transform=transforms.Compose([
     torchvision.transforms.Grayscale(),
-    torchvision.transforms.Resize((64,64)),
+    torchvision.transforms.Resize((args.img_height,args.img_height)),
     transforms.ToTensor(),
-    torchvision.transforms.Normalize((0.5,), (0.5,)),
+    # torchvision.transforms.Normalize((0.5,), (0.5,)),
+    transforms.Normalize((0.1307,), (0.3081,))
 ])
 
 
@@ -85,14 +96,21 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 train_datasets=torch.utils.data.ConcatDataset([
     # witout msk
-    custom_dataset.Chars74k(csv_file='good_train.csv', root_dir='data', CLASSES=args.CLASSES,
-                             target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
-    custom_dataset.Chars74k(csv_file='good_validation.csv', root_dir='data', CLASSES=args.CLASSES,
-                             target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
-    custom_dataset.Chars74k(csv_file='good_train.csv', root_dir='data', CLASSES=args.CLASSES,
-                             target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
-    custom_dataset.Chars74k(csv_file='good_validation.csv', root_dir='data', CLASSES=args.CLASSES,
-                             target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
+    custom_datasets.Chars74k(csv_file='data/train.csv', root_dir='data', CLASSES=args.CLASSES,
+                             target_transform=utils.get_index_of_label, transform=gtrain_transform, ),
+    custom_datasets.Chars74k(csv_file='data/train.csv', root_dir='data', CLASSES=args.CLASSES,
+                             target_transform=utils.get_index_of_label, transform=gtrain_transform2, ),
+    # custom_datasets.Chars74k(csv_file='data/train.csv', root_dir='data', CLASSES=args.CLASSES,
+    #                          target_transform=utils.get_index_of_label, transform=gtrain_transform, ),
+    # custom_datasets.Chars74k(csv_file='data/kaist/kaist.csv', root_dir='data/kaist', CLASSES=args.CLASSES,
+    #                          target_transform=utils.get_index_of_label, transform=gtrain_transform, ),
+
+    # custom_datasets.Chars74k(csv_file='data/validation.csv', root_dir='data', CLASSES=args.CLASSES,
+    #                          target_transform=utils.get_index_of_label, transform=gtrain_transform, ),
+    # custom_datasets.Chars74k(csv_file='good_train.csv', root_dir='data', CLASSES=args.CLASSES,
+    #                          target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
+    # custom_datasets.Chars74k(csv_file='good_validation.csv', root_dir='data', CLASSES=args.CLASSES,
+    #                          target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
 
     # with msk
     # custom_dataset.Chars74k(csv_file='data/mskc_train/mskc_train.csv',root_dir='data/mskc_train',CLASSES=args.CLASSES, target_transform=utils.get_index_of_label, transform=train_transform,),
@@ -113,20 +131,20 @@ train_loader = torch.utils.data.DataLoader(
 # Test dataset
 test_loader = torch.utils.data.DataLoader(
     # witout msk
-    custom_dataset.Chars74k(csv_file='good_test.csv', root_dir='data', CLASSES=args.CLASSES,
-                             target_transform=utils.get_index_of_label, transform=test_transform, transform2=gtest_transform, ),
+    custom_datasets.Chars74k(csv_file='data/test.csv', root_dir='data', CLASSES=args.CLASSES,
+                             target_transform=utils.get_index_of_label, transform=gtest_transform,  ),
     # with msk
     # custom_dataset.Chars74k(csv_file='data/mskc_test/mskc_test.csv',root_dir='data/mskc_test',CLASSES=args.CLASSES, target_transform=utils.get_index_of_label, transform=test_transform,),
     batch_size=args.batch_size, shuffle=True, num_workers=4)
 
 
-# val_datasets=torch.utils.data.ConcatDataset([
-#     custom_dataset.Chars74k(csv_file='good_validation.csv', root_dir='data', CLASSES=args.CLASSES,
-#                              target_transform=utils.get_index_of_label, transform=train_transform,transform2=gtrain_transform, ),
-#     ])
-# val_loader = torch.utils.data.DataLoader(
-#     val_datasets,
-#     batch_size=args.batch_size, shuffle=True, num_workers=4)
+val_datasets=torch.utils.data.ConcatDataset([
+    custom_datasets.Chars74k(csv_file='data/validation.csv', root_dir='data', CLASSES=args.CLASSES,
+                             target_transform=utils.get_index_of_label, transform=gtest_transform, ),
+])
+val_loader = torch.utils.data.DataLoader(
+    val_datasets,
+    batch_size=args.batch_size, shuffle=True, num_workers=4)
 
 
 def convert_alphabet_index(index,CLASSES = args.CLASSES):
@@ -149,71 +167,97 @@ def adjust_lr(optimizer, epoch):
         param_group['lr'] = lr
 
 class Net(nn.Module):
-    def __init__(self, num_classes, feature_extract,input_channel=3, use_pretrained=True):
+    def __init__(self, num_classes, feature_extract,input_channel=1, use_pretrained=False,hidden=169*2):
         super(Net, self).__init__()
-        # self.conv1 = nn.Conv2d(1, 10, kernel_size=5)
+        # self.conv1 = nn.utils.spectral_norm(nn.Conv2d(input_channel, 8, 3))()
+        # self.bn1=nn.BatchNorm2d(8)
+        # self.conv2 = nn.utils.spectral_norm(nn.Conv2d(8, 16, 3))()
+        # self.bn2=nn.BatchNorm2d(16)
+
+        # 64
+        # self.conv1 = nn.Conv2d(1, 20, kernel_size=5)
         # self.conv2 = nn.Conv2d(10, 20, kernel_size=5)
         # self.conv2_drop = nn.Dropout2d()
-        self.fc1 = nn.Linear(num_classes, num_classes)
-        self.bn1=nn.BatchNorm1d(num_classes)
-        self.rl1=nn.ReLU(True)
+        # self.bn1=nn.BatchNorm2d(2)
+        # self.bn2=nn.BatchNorm2d(2)
+        # self.fc64_1 = nn.Linear(2304, 512)
+        # self.fc64_2 = nn.Linear(512, num_classes)
+
         # Spatial transformer localization-network
         self.localization = nn.Sequential(
-            # origin
-            # nn.Conv2d(1, 4, kernel_size=7),
-            # nn.MaxPool2d(2, stride=2),
-            # nn.BatchNorm2d(4),
-            # nn.ReLU(True),
-            # nn.Conv2d(4, 8, kernel_size=5),
+            # 64
+            # nn.Conv2d(input_channel, 8, kernel_size=7),
             # nn.MaxPool2d(2, stride=2),
             # nn.BatchNorm2d(8),
             # nn.ReLU(True),
+            # nn.Conv2d(8, 10, kernel_size=5),
+            # nn.MaxPool2d(2, stride=2),
+            # nn.BatchNorm2d(10),
+            # nn.ReLU(True),
 
-            nn.Conv2d(input_channel, 8, kernel_size=5, stride=2,),
+            # 224
+            nn.Conv2d(input_channel, 8, kernel_size=3, stride=2,),
             nn.BatchNorm2d(8),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2,),
             nn.BatchNorm2d(8),
             nn.ReLU(inplace=True),
-
-            nn.Conv2d(8, 16, kernel_size=5, stride=2, ),
+            nn.Conv2d(8, 16, kernel_size=3, stride=2, ),
             nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2,),
             nn.BatchNorm2d(16),
             nn.ReLU(inplace=True),
-
-            nn.Conv2d(16, 24, kernel_size=3, stride=2,),
-            nn.BatchNorm2d(24),
+            nn.Conv2d(16, 32, kernel_size=3, stride=2,),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             nn.MaxPool2d(kernel_size=2, stride=2,),
-            nn.BatchNorm2d(24),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
         )
 
         # Regressor for the 3 * 2 affine matrix
         self.fc_loc = nn.Sequential(
-            # nn.Linear(8 *144, 16),
-            nn.Linear(24 *9, 16),
-            nn.BatchNorm1d(16),
-            # nn.ReLU(True),
-            nn.Linear(16, 3 * 2)
+            # 64
+            # nn.Linear(10 *144, 32),
+            # 224
+            nn.Linear(32 *9, 32),
+            nn.ReLU(True),
+            nn.Linear(32, 3 * 2)
         )
+
+        # self.classify = nn.Sequential(
+        #     nn.Conv2d(input_channel, 16, kernel_size=3,  ),
+        #     nn.BatchNorm2d(16),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=2, stride=2,),
+        #     nn.Conv2d(16, 32, kernel_size=3,  ),
+        #     nn.BatchNorm2d(32),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=2, stride=2,),
+        #     nn.Conv2d(32, 64, kernel_size=3,  ),
+        #     nn.BatchNorm2d(64),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=2, stride=2,),
+        # )
 
         # Initialize the weights/bias with identity transformation
         self.fc_loc[2].weight.data.zero_()
         self.fc_loc[2].bias.data.copy_(torch.tensor([1, 0, 0, 0, 1, 0], dtype=torch.float))
 
+        # 224
         self.pretrain_model=models.squeezenet1_0(pretrained=use_pretrained)
         set_parameter_requires_grad(self.pretrain_model, feature_extract)
         self.pretrain_model.classifier[1] = nn.Conv2d(512, num_classes, kernel_size=(1, 1), stride=(1, 1))
         self.pretrain_model.num_classes = num_classes
 
     # Spatial transformer network forward function
-    def stn(self, x,x2):
+    def stn(self, x):
         xs = self.localization(x)
-        # xs = xs.view(-1, 8 *144)
-        xs = xs.view(-1, 24 *9)
+        # 64
+        # xs = xs.view(-1, 10 *144)
+        # 224
+        xs = xs.view(-1, 32 *9)
         theta = self.fc_loc(xs)
         theta = theta.view(-1, 2, 3)
 
@@ -221,26 +265,22 @@ class Net(nn.Module):
         x = F.grid_sample(x, grid)
         return x
 
-    def forward(self, x,x2):
+    def forward(self, x):
         # transform the input
-        x = self.stn(x,x2)
-
-        # Perform the usual forward pass
-        # x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        # x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        # x = x.view(-1, 320)
-        # x = F.relu(self.fc1(x))
+        x = self.stn(x)
+        # 64
+        # x=self.classify(x)
+        # x = x.view(-1, 2304)
+        # x = F.relu(self.fc64_1(x))
         # x = F.dropout(x, training=self.training)
-        # x = self.fc2(x)
+        # x = self.fc64_2(x)
 
+        x=x.expand(-1,3,-1,-1)
         x=self.pretrain_model(x)
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = self.rl1(x)
         # return x
         return F.log_softmax(x, dim=1)
 
-def train(model,train_loader, test_loader, criterion, optimizer,  num_epochs):
+def train(model,train_loader, val_loader, criterion, optimizer,  num_epochs):
     since = time.time()
     best_model_wts = copy.deepcopy(model.state_dict())
     best_acc = 0.0
@@ -248,33 +288,23 @@ def train(model,train_loader, test_loader, criterion, optimizer,  num_epochs):
     train_acc_history = []
 
     for epoch in range(num_epochs):
-        adjust_lr(optimizer, epoch)
+        # adjust_lr(optimizer, epoch)
         running_loss = 0.0
         running_corrects = 0
         insensitive=0
-        val_acc=0
         val_loss = 0
         val_coorect = 0
         val_insensitive=0
         val_top5=0
         top5=0
-        validation_idx=0.2
-        for batch_idx, (inputs, inputs2,labels) in enumerate(train_loader):
-            inputs, inputs2, labels = inputs.to(device), inputs2.to(device), labels.to(device)
-            if validation_idx*len(train_loader)> batch_idx and (validation_idx-0.2)*len(train_loader)<= batch_idx:
-                phase='validation'
-            else:
-                phase = 'train'
 
-            if epoch%5==0:
-                validation_idx= 0.2 if validation_idx==1 else validation_idx+0.2
-
-            if phase=='train':
-                model.train()
+        model.train()
+        for batch_idx, (inputs, labels) in enumerate(train_loader):
+                inputs,  labels = inputs.to(device),  labels.to(device)
                 # zero the parameter gradients
                 optimizer.zero_grad()
 
-                output = model(inputs,inputs2)
+                output = model(inputs)
                 loss = criterion(output, labels)
 
                 # backward + optimize only if in training phase
@@ -296,11 +326,11 @@ def train(model,train_loader, test_loader, criterion, optimizer,  num_epochs):
                         if pch.item() == t.item() :
                             top5 += 1
                             break
-            else:
-                # test
 
-                model.eval()
-                output = model(inputs,inputs2)
+        model.eval()
+        for batch_idx, (inputs, labels) in enumerate(val_loader):
+                inputs,  labels = inputs.to(device),  labels.to(device)
+                output = model(inputs)
                 val_loss += criterion(output, labels, ).item()
                 # get the index of the max log-probability
                 pred = output.max(1, keepdim=True)[1]
@@ -309,14 +339,13 @@ def train(model,train_loader, test_loader, criterion, optimizer,  num_epochs):
                 for t, p in zip(labels, output.max(1)[1]):
                     if p.item() == t.item() or convert_alphabet_index(p.item()) == t.item():
                         val_insensitive += 1
-
                 for t, p in zip(labels, output.topk(3)[1]):
                     for pch in p:
                         if pch.item() == t.item():
                             val_top5 += 1
                             break
-        train_batch=len(train_loader.dataset)*0.8
-        val_batch = len(train_loader.dataset) * 0.2
+        train_batch=len(train_loader.dataset)
+        val_batch = len(val_loader.dataset)
 
         epoch_loss = running_loss / train_batch
         epoch_sensitive_acc = running_corrects / train_batch
@@ -327,6 +356,7 @@ def train(model,train_loader, test_loader, criterion, optimizer,  num_epochs):
         print('{}\tLoss: {:.2f}\tAccT1: {:.2f}\tin_AccT1: {:.2f}\tAccT5: {:.2f}'.format('Train', epoch_loss, epoch_sensitive_acc,epoch_insensitive_acc,epoch_top3_insensitive_acc))
         train_acc_history.append(epoch_sensitive_acc)
 
+        val_loss = val_loss / val_batch
         val_acc=val_coorect/val_batch
         val_acc_history.append(val_acc)
         print('Epoch [{}/{}] '.format(epoch + 1, num_epochs), end='')
@@ -348,7 +378,7 @@ def train(model,train_loader, test_loader, criterion, optimizer,  num_epochs):
     torch.save(model.state_dict(), args.model)
     print(args.model,'model saved')
 
-    return model, train_acc_history,val_acc_history
+    return model, train_acc_history, val_acc_history
 
 def test(model,dataloaders, criterion, save_failed_img=False):
     with torch.no_grad():
@@ -359,9 +389,9 @@ def test(model,dataloaders, criterion, save_failed_img=False):
         top5=0
         failed_img_count=0
 
-        for data,inputs2, target in dataloaders:
-            data,inputs2, target = data.to(device), inputs2.to(device), target.to(device)
-            output = model(data,inputs2)
+        for data, target in dataloaders:
+            data, target = data.to(device),  target.to(device)
+            output = model(data)
 
             # sum up batch loss
             # test_loss +=criterion(output, target, size_average=False).item()
@@ -377,7 +407,6 @@ def test(model,dataloaders, criterion, save_failed_img=False):
                         # torchvision.transforms.ToPILImage(d).save('gt_{}_pred_{}.png'.format(args.CLASSES[t.item()],args.CLASSES[p.item()]))
 
                         v_utils.save_image(d.cpu().data, "./failed_{}_gt_{}_pred_{}.png".format(failed_img_count,args.CLASSES[p.item()],args.CLASSES[t.item()]))
-            print('failed img saved')
 
             # case insensitive top1 count
             for t, p in zip(target, output.max(1)[1]):
@@ -408,10 +437,9 @@ def visualize_stn(model,dataloaders):
     with torch.no_grad():
         # Get a batch of training data
         data = next(iter(dataloaders))[0].to(device)
-        data2 = next(iter(dataloaders))[1].to(device)
 
         input_tensor = data.cpu()
-        transformed_input_tensor = model.stn(data,data2).cpu()
+        transformed_input_tensor = model.stn(data).cpu()
 
         in_grid = convert_image_np(
             torchvision.utils.make_grid(input_tensor))
@@ -449,7 +477,7 @@ if __name__ == "__main__":
     # optimizer = optim.SGD(model.parameters(), lr=0.01)
     # criterion=F.nll_loss
 
-    best_model, train_hist, tets_hist=train(model,train_loader, test_loader, criterion, optimizer,  args.epochs)
+    best_model, train_hist, tets_hist=train(model,train_loader, val_loader, criterion, optimizer,  args.epochs)
     # print(tets_hist)
     # with open( args.model+'_acc_record.csv', 'w') as writeFile:
     #     writer = csv.writer(writeFile)
@@ -466,11 +494,11 @@ if __name__ == "__main__":
 
     ohist = [h for h in train_hist]
     shist = [h for h in tets_hist]
-    plt.title("Train Accuracy vs. Test Accuracy")
+    plt.title("Train Accuracy vs. Validation Accuracy")
     plt.xlabel(" Epochs")
     plt.ylabel(" Accuracy")
     plt.plot(range(1, args.epochs + 1), ohist, label="Train")
-    plt.plot(range(1, args.epochs + 1), shist, label="Test")
+    plt.plot(range(1, args.epochs + 1), shist, label="Validation")
     plt.ylim((0, 1.))
     plt.xticks(np.arange(0, args.epochs + 1, 5))
     plt.legend()
@@ -482,4 +510,3 @@ if __name__ == "__main__":
     model = Net(args.num_classes,args.feature_extract,).to(device)
     model.load_state_dict(torch.load(args.model))
     test(model,test_loader,criterion,save_failed_img=True)
-
